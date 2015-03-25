@@ -90,6 +90,7 @@ typedef struct ppmDevice {
     uint32_t deltaTime;
     uint32_t captures[PWM_PORTS_OR_PPM_CAPTURE_COUNT];
     uint32_t largeCounter;
+    uint32_t lastOverflow;
     int8_t   numChannels;
     int8_t   numChannelsPrevFrame;
     uint8_t  stableFramesSeenCount;
@@ -133,6 +134,7 @@ static void ppmInit(void)
     ppmDev.currentTime  = 0;
     ppmDev.deltaTime    = 0;
     ppmDev.largeCounter = 0;
+    ppmDev.lastOverflow = 0;
     ppmDev.numChannels  = -1;
     ppmDev.numChannelsPrevFrame = -1;
     ppmDev.stableFramesSeenCount = 0;
@@ -143,15 +145,13 @@ static void ppmOverflowCallback(timerOvrHandlerRec_t* cbRec, captureCompare_t ca
 {
     UNUSED(cbRec);
     ppmDev.largeCounter += capture + 1;
+    ppmDev.lastOverflow = capture;
 }
 
 static void ppmEdgeCallback(timerCCHandlerRec_t* cbRec, captureCompare_t capture)
 {
     UNUSED(cbRec);
     int32_t i;
-
-    /* Shift the last measurement out */
-    ppmDev.previousTime = ppmDev.currentTime;
 
     /* Grab the new count */
     ppmDev.currentTime  = capture;
@@ -163,11 +163,16 @@ static void ppmEdgeCallback(timerCCHandlerRec_t* cbRec, captureCompare_t capture
     ppmDev.currentTime = ppmDev.currentTime >> ppmCountShift;
 
     /* Capture computation */
+    if (ppmDev.currentTime < ppmDev.previousTime) {
+        ppmDev.currentTime += ppmDev.lastOverflow;
+    }
+
     ppmDev.deltaTime    = ppmDev.currentTime - ppmDev.previousTime;
 
+    /* Shift the last measurement out */
     ppmDev.previousTime = ppmDev.currentTime;
 
-#if 0
+#if 1
     static uint32_t deltaTimes[20];
     static uint8_t deltaIndex = 0;
 
@@ -333,7 +338,7 @@ void ppmInConfig(const timerHardware_t *timerHardwarePtr)
     pwmGPIOConfig(timerHardwarePtr->gpio, timerHardwarePtr->pin, timerHardwarePtr->gpioInputMode);
     pwmICConfig(timerHardwarePtr->tim, timerHardwarePtr->channel, TIM_ICPolarity_Rising);
 
-    timerConfigure(timerHardwarePtr, (uint16_t)PPM_TIMER_PERIOD, PWM_TIMER_MHZ);
+    timerConfigure(timerHardwarePtr, (timCCR_t)PPM_TIMER_PERIOD, PWM_TIMER_MHZ);
 
     timerChCCHandlerInit(&self->edgeCb, ppmEdgeCallback);
     timerChOvrHandlerInit(&self->overflowCb, ppmOverflowCallback);

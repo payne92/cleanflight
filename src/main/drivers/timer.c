@@ -243,7 +243,7 @@ const timerHardware_t timerHardware[USABLE_TIMER_CHANNEL_COUNT] = {
     { TIM1,  GPIOA, Pin_8,  TIM_Channel_1, TIM1_CC_IRQn,            1, Mode_AF_PP, GPIO_PinSource8,  GPIO_AF_6},  // GPIO_TIMER / LED_STRIP
 };
 
-#define USED_TIMERS  (TIM_N(1) | TIM_N(2) | TIM_N(3) | TIM_N(4) | TIM_N(15) | TIM_N(16) |TIM_N(17))
+#define USED_TIMERS  (TIM_N(1) | TIM_N(2) | TIM_N(3) | TIM_N(4) | TIM_N(15) | TIM_N(16) | TIM_N(17))
 
 #define TIMER_APB1_PERIPHERALS (RCC_APB1Periph_TIM2 | RCC_APB1Periph_TIM3 | RCC_APB1Periph_TIM4)
 #define TIMER_APB2_PERIPHERALS (RCC_APB2Periph_TIM1 | RCC_APB2Periph_TIM15 | RCC_APB2Periph_TIM16 | RCC_APB2Periph_TIM17)
@@ -259,7 +259,7 @@ const timerHardware_t timerHardware[USABLE_TIMER_CHANNEL_COUNT] = {
 typedef struct timerConfig_s {
     timerCCHandlerRec_t *edgeCallback[CC_CHANNELS_PER_TIMER];
     timerOvrHandlerRec_t *overflowCallback[CC_CHANNELS_PER_TIMER];
-    timerOvrHandlerRec_t *overflowCallbackActive; // null-terminated linkded list of active overflow callbacks
+    timerOvrHandlerRec_t *overflowCallbackActive; // null-terminated linked list of active overflow callbacks
 	uint32_t forcedOverflowTimerValue;
 } timerConfig_t;
 timerConfig_t timerConfig[USED_TIMER_COUNT];
@@ -361,7 +361,7 @@ void timerNVICConfigure(uint8_t irq)
     NVIC_Init(&NVIC_InitStructure);
 }
 
-void configTimeBase(TIM_TypeDef *tim, uint16_t period, uint8_t mhz)
+void configTimeBase(TIM_TypeDef *tim, timCCR_t period, uint8_t mhz)
 {
     TIM_TimeBaseInitTypeDef  TIM_TimeBaseStructure;
 
@@ -378,7 +378,7 @@ void configTimeBase(TIM_TypeDef *tim, uint16_t period, uint8_t mhz)
 }
 
 // old interface for PWM inputs. It should be replaced
-void timerConfigure(const timerHardware_t *timerHardwarePtr, uint16_t period, uint8_t mhz)
+void timerConfigure(const timerHardware_t *timerHardwarePtr, timCCR_t period, uint8_t mhz)
 {
     configTimeBase(timerHardwarePtr->tim, period, mhz);
     TIM_Cmd(timerHardwarePtr->tim, ENABLE);
@@ -429,11 +429,12 @@ void timerChOvrHandlerInit(timerOvrHandlerRec_t *self, timerOvrHandlerCallback *
 static void timerChConfig_UpdateOverflow(timerConfig_t *cfg, TIM_TypeDef *tim) {
     timerOvrHandlerRec_t **chain = &cfg->overflowCallbackActive;
     ATOMIC_BLOCK(NVIC_PRIO_TIMER) {
-        for(int i = 0; i < CC_CHANNELS_PER_TIMER; i++)
-            if(cfg->overflowCallback[i]) {
+        for (int i = 0; i < CC_CHANNELS_PER_TIMER; i++) {
+            if (cfg->overflowCallback[i]) {
                 *chain = cfg->overflowCallback[i];
                 chain = &cfg->overflowCallback[i]->next;
             }
+        }
         *chain = NULL;
     }
     // enable or disable IRQ
@@ -648,7 +649,7 @@ static void timCCxHandler(TIM_TypeDef *tim, timerConfig_t *timerConfig)
     unsigned tim_status;
     tim_status = tim->SR & tim->DIER;
 #if 1
-    while(tim_status) {
+    while (tim_status) {
         // flags will be cleared by reading CCR in dual capture, make sure we call handler correctly
         // currrent order is highest bit first. Code should not rely on specific order (it will introduce race conditions anyway)
         unsigned bit = __builtin_clz(tim_status);
@@ -658,15 +659,15 @@ static void timCCxHandler(TIM_TypeDef *tim, timerConfig_t *timerConfig)
         switch(bit) {
         case __builtin_clz(TIM_IT_Update):
 
-        	if(timerConfig->forcedOverflowTimerValue != 0){
-        		capture = timerConfig->forcedOverflowTimerValue - 1;
-        		timerConfig->forcedOverflowTimerValue = 0;
-        	} else {
-        		capture = tim->ARR;
-        	}
+            if (timerConfig->forcedOverflowTimerValue != 0) {
+                capture = timerConfig->forcedOverflowTimerValue - 1;
+                timerConfig->forcedOverflowTimerValue = 0;
+            } else {
+                capture = tim->ARR;
+            }
 
             timerOvrHandlerRec_t *cb = timerConfig->overflowCallbackActive;
-            while(cb) {
+            while (cb) {
                 cb->fn(cb, capture);
                 cb = cb->next;
             }
