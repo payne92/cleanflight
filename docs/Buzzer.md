@@ -1,6 +1,11 @@
 # Buzzer
 
-Cleanflight supports a buzzer which is used for the following purposes:
+Cleanflight supports a buzzer/beeper (optional hardware on most control boards) to indicate events 
+and status reports:
+
+| Beeper Pattern                                        | Indication               |
+|-------------------------------------------------------|--------------------------|
+|&#9608; &#9608;&#9608;&#9608;                          | XXX                      |
 
  * Low and critical battery alarms (when battery monitoring enabled)
  * Arm/disarm tones (and warning beeps while armed)
